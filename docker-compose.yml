@@ -1,0 +1,65 @@
+services:
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in BookStoreDeployment/.env}
+      MYSQL_DATABASE: ${DB_NAME:?Set DB_NAME in BookStoreDeployment/.env}
+    ports:
+      - "3308:3306"
+    volumes:
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 5s      
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+
+  catalog-service:
+    build:
+      context: ../CatalogService
+      dockerfile: dockerfile
+    environment:
+      DB_HOST: mysql
+      DB_NAME: ${DB_NAME:?Set DB_NAME in BookStoreDeployment/.env}
+      DB_USER: ${DB_USER:?Set DB_USER in BookStoreDeployment/.env}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in BookStoreDeployment/.env}
+    ports:
+      - "8101:8001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: on-failure
+
+  order-service:
+    build:
+      context: ../OrderService
+      dockerfile: dockerfile
+    environment:
+      DB_HOST: mysql
+      DB_NAME: ${DB_NAME:?Set DB_NAME in BookStoreDeployment/.env}
+      DB_USER: ${DB_USER:?Set DB_USER in BookStoreDeployment/.env}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in BookStoreDeployment/.env}
+      CATALOG_SERVICE_URL: ${CATALOG_SERVICE_URL:?Set CATALOG_SERVICE_URL in the environment or .env file}
+    ports:
+      - "8102:8002"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      catalog-service:
+        condition: service_started
+    restart: on-failure
+
+  bookstore-ui:
+    build:
+      context: ../BookStoreUI
+      dockerfile: dockerfile
+    environment:
+      CATALOG_SERVICE_URL: ${CATALOG_SERVICE_URL:?Set CATALOG_SERVICE_URL in BookStoreDeployment/.env}
+      ORDER_SERVICE_URL: ${ORDER_SERVICE_URL:?Set ORDER_SERVICE_URL in BookStoreDeployment/.env}
+      BOOKSTORE_ADMIN_PASSWORD: ${BOOKSTORE_ADMIN_PASSWORD:?Set BOOKSTORE_ADMIN_PASSWORD in BookStoreDeployment/.env}
+    ports:
+      - "5001:8080"
+    depends_on:
+      order-service:
+        condition: service_started
